@@ -10,6 +10,11 @@ Release a.b
 
  * Samtools view now supports int value tags for options -d and -D.
 
+ * The legacy samtools API (libbam.a, bam.h, sam.h, etc) has been removed.
+   We recommend coding against the HTSlib API directly. The legacy API had
+   not been actively maintained since 2015.
+
+
 Release 1.11 (22nd September 2020)
 ----------------------------------
 

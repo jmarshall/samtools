@@ -27,11 +27,12 @@ DEALINGS IN THE SOFTWARE.  */
 
 #include <math.h>
 #include <stdio.h>
-#include "bam.h" // for bam_get_library
 #include "htslib/sam.h"
 #include "htslib/khash.h"
 #include "htslib/klist.h"
 #include "samtools.h"
+
+extern const char *bam_get_library(sam_hdr_t *header, const bam1_t *b);
 
 #define QUEUE_CLEAR_SIZE 0x100000
 #define MAX_POS 0x7fffffff

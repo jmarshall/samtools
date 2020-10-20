@@ -33,7 +33,8 @@ DEALINGS IN THE SOFTWARE.  */
 #include "htslib/sam.h"
 #include "sam_opts.h"
 #include "samtools.h"
-#include "bam.h" // for bam_get_library
+
+extern const char *bam_get_library(sam_hdr_t *header, const bam1_t *b);
 
 typedef bam1_t *bam1_p;
 
