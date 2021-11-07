@@ -91,52 +91,11 @@ typedef struct samview_settings {
     hts_reglist_t *reglist;
 } samview_settings_t;
 
-// Copied from htslib/sam.c.
-// TODO: we need a proper interface to find the length of an aux tag,
-// or at the very make exportable versions of these in htslib.
-static inline int aux_type2size(uint8_t type)
+static inline int tagint(const char *s)
 {
-    switch (type) {
-    case 'A': case 'c': case 'C':
-        return 1;
-    case 's': case 'S':
-        return 2;
-    case 'i': case 'I': case 'f':
-        return 4;
-    case 'd':
-        return 8;
-    case 'Z': case 'H': case 'B':
-        return type;
-    default:
-        return 0;
-    }
-}
-
-// Copied from htslib/sam.c.
-static inline uint8_t *skip_aux(uint8_t *s, uint8_t *end)
-{
-    int size;
-    uint32_t n;
-    if (s >= end) return end;
-    size = aux_type2size(*s); ++s; // skip type
-    switch (size) {
-    case 'Z':
-    case 'H':
-        while (s < end && *s) ++s;
-        return s < end ? s + 1 : end;
-    case 'B':
-        if (end - s < 5) return NULL;
-        size = aux_type2size(*s); ++s;
-        n = le_to_u32(s);
-        s += 4;
-        if (size == 0 || end - s < size * n) return NULL;
-        return s + size * n;
-    case 0:
-        return NULL;
-    default:
-        if (end - s < size) return NULL;
-        return s + size;
-    }
+    unsigned int u0 = (unsigned char) s[0];
+    unsigned int u1 = (unsigned char) s[1];
+    return (u0 << 8) | u1;
 }
 
 // Returns 0 to indicate read should be output 1 otherwise
@@ -212,48 +171,31 @@ static int process_aln(const sam_hdr_t *h, bam1_t *b, samview_settings_t* settin
 static int adjust_tags(const sam_hdr_t *h, bam1_t *b,
                        samview_settings_t* settings) {
     if (settings->keep_tag) {
-        uint8_t *s_from, *s_to, *end = b->data + b->l_data;
         auxhash_t h = settings->keep_tag;
+        uint8_t *s_maybe = bam_aux_first(b);
 
-        s_from = s_to = bam_get_aux(b);
-        while (s_from < end) {
-            int x = (int)s_from[0]<<8 | s_from[1];
-            uint8_t *s = skip_aux(s_from+2, end);
-            if (s == NULL) {
-                print_error("view", "malformed aux data for record \"%s\"",
-                            bam_get_qname(b));
-                return -1;
+        while (s_maybe) {
+            uint8_t *s = s_maybe;
+            while (s && kh_get(aux_exists, h, tagint(bam_aux_tag(s))) == kh_end(h)) {
+                s = bam_aux_next(b, s);
+                if (!s && errno == EINVAL) return -1;
             }
-
-            if (kh_get(aux_exists, h, x) != kh_end(h) ) {
-                if (s_to != s_from) memmove(s_to, s_from, s - s_from);
-                s_to += s - s_from;
-            }
-            s_from = s;
+            s_maybe = bam_aux_next(b, bam_aux_remove2(b, s_maybe, s));
         }
-        b->l_data = s_to - b->data;
+
+        if (errno != ENOENT) return -1;
 
     } else if (settings->remove_tag) {
-        uint8_t *s_from, *s_to, *end = b->data + b->l_data;
         auxhash_t h = settings->remove_tag;
 
-        s_from = s_to = bam_get_aux(b);
-        while (s_from < end) {
-            int x = (int)s_from[0]<<8 | s_from[1];
-            uint8_t *s = skip_aux(s_from+2, end);
-            if (s == NULL) {
-                print_error("view", "malformed aux data for record \"%s\"",
-                            bam_get_qname(b));
-                return -1;
-            }
+        uint8_t *s = bam_aux_first(b);
+        while (s)
+            if (kh_get(aux_exists, h, tagint(bam_aux_tag(s))) != kh_end(h))
+                s = bam_aux_remove(b, s);
+            else
+                s = bam_aux_next(b, s);
 
-            if (kh_get(aux_exists, h, x) == kh_end(h) ) {
-                if (s_to != s_from) memmove(s_to, s_from, s - s_from);
-                s_to += s - s_from;
-            }
-            s_from = s;
-        }
-        b->l_data = s_to - b->data;
+        if (errno != ENOENT) return -1;
     }
 
     return 0;
@@ -397,9 +339,8 @@ int parse_aux_list(auxhash_t *h, char *optarg) {
         *h = kh_init(aux_exists);
 
     while (strlen(optarg) >= 2) {
-        int x = optarg[0]<<8 | optarg[1];
         int ret = 0;
-        kh_put(aux_exists, *h, x, &ret);
+        kh_put(aux_exists, *h, tagint(optarg), &ret);
         if (ret < 0)
             return -1;
 
