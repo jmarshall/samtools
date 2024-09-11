@@ -3239,6 +3239,7 @@ int bam_sort_core_ext(SamOrder sam_order, char* sort_tag, int minimiser_kmer,
     htsThreadPool htspool = { NULL, 0 };
     int num_in_mem = 0;
     int large_pos = 0;
+    int placed_seen = 0;
 
     if (!b) {
         print_error("sort", "couldn't allocate memory for bam record");
@@ -3405,6 +3406,8 @@ int bam_sort_core_ext(SamOrder sam_order, char* sort_tag, int minimiser_kmer,
     while ((res = sam_read1(fp, header, b)) >= 0) {
         int mem_full = 0;
 
+        if (b->core.tid >= 0) placed_seen = 1;
+
         if (k == max_k) {
             bam1_tag *new_buf;
             max_k = max_k? max_k<<1 : 0x10000;
@@ -3538,6 +3541,11 @@ int bam_sort_core_ext(SamOrder sam_order, char* sort_tag, int minimiser_kmer,
         if (num_in_mem < 0) goto err;
     } else {
         num_in_mem = 0;
+    }
+
+    if (g_sam_order == MinHash && placed_seen == 0) {
+        // FIXME Update header accordingly, something like
+        sam_hdr_update_hd(header, "SO", "unsorted", "SS", "unsorted:minhash");
     }
 
     // write the final output
